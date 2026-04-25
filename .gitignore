@@ -1,0 +1,66 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# =========================
+# VS Code
+# =========================
+.vscode/
+*.code-workspace
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# Dataset (VERY IMPORTANT)
+# =========================
+dataset/
+raw_data/
+augmented_dataset/
+
+# =========================
+# Model Checkpoints
+# =========================
+checkpoints/
+*.pth
+*.pt
+
+# =========================
+# Outputs / Generated Files
+# =========================
+outputs/
+generated_samples/
+
+# =========================
+# Cache / Temp
+# =========================
+*.tmp
+*.cache
+
+# =========================
+# Environment files
+# =========================
+.env
