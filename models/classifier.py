@@ -24,3 +24,11 @@ class CNN(nn.Module):
     def forward(self, x):
         x = self.features(x)
         return self.classifier(x)
+def get_saliency(model, img, label):
+    img.requires_grad_()
+    out = model(img)
+    loss = out[0, label]
+    loss.backward()
+
+    saliency = img.grad.abs().max(dim=1)[0]
+    return saliency

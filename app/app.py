@@ -2,7 +2,7 @@ import gradio as gr
 import torch
 from PIL import Image
 import os
-from torchvision import transforms, utils
+from torchvision import transforms
 import numpy as np
 
 from models.classifier import CNN
@@ -22,8 +22,10 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
+label_map = {0: "Benign", 1: "Melanoma"}
+
 # =========================
-# Load Models Safely
+# Load Models
 # =========================
 classifier = CNN(num_classes=NUM_CLASSES).to(device)
 cvae = CVAE(num_classes=NUM_CLASSES, latent_dim=LATENT_DIM).to(device)
@@ -47,11 +49,23 @@ def load_models():
 cls_loaded, gen_loaded = load_models()
 
 # =========================
+# Saliency Map (Explainability)
+# =========================
+def get_saliency(img_tensor, label):
+    img_tensor.requires_grad_()
+    out = classifier(img_tensor)
+    loss = out[0, label]
+    loss.backward()
+
+    saliency = img_tensor.grad.abs().max(dim=1)[0]
+    return saliency.squeeze().cpu().numpy()
+
+# =========================
 # Prediction Function
 # =========================
 def predict(image):
     if not cls_loaded:
-        return "Classifier not trained yet."
+        return None, "Classifier not trained.", None
 
     img = transform(image).unsqueeze(0).to(device)
 
@@ -61,8 +75,14 @@ def predict(image):
         pred = prob.argmax().item()
         conf = prob[0][pred].item()
 
-    label_map = {0: "benign", 1: "melanoma"}
-    return f"Prediction: {label_map.get(pred, pred)} | Confidence: {conf:.2f}"
+    # Saliency
+    saliency = get_saliency(img.clone(), pred)
+
+    return (
+        {label_map[pred]: float(conf)},   # confidence bar
+        f"{label_map[pred]} ({conf:.2f})",
+        saliency
+    )
 
 # =========================
 # Generate Synthetic Images
@@ -95,14 +115,23 @@ def generate_samples(class_idx, num_samples):
 with gr.Blocks() as app:
 
     gr.Markdown("# 🏥 Rare Disease AI Assistant")
+    gr.Markdown("⚠️ Not a medical diagnosis tool")
 
     # -------- Prediction Tab --------
     with gr.Tab("Prediction"):
         input_img = gr.Image(type="pil", label="Upload Image")
-        pred_output = gr.Textbox(label="Prediction")
 
-        pred_btn = gr.Button("Predict")
-        pred_btn.click(predict, inputs=input_img, outputs=pred_output)
+        conf_bar = gr.Label(label="Confidence")
+        pred_text = gr.Textbox(label="Prediction")
+        saliency_map = gr.Image(label="Saliency Map")
+
+        pred_btn = gr.Button("Predict + Explain")
+
+        pred_btn.click(
+            predict,
+            inputs=input_img,
+            outputs=[conf_bar, pred_text, saliency_map]
+        )
 
     # -------- Generation Tab --------
     with gr.Tab("Generate Synthetic Data"):
@@ -115,6 +144,7 @@ with gr.Blocks() as app:
         num_input = gr.Slider(1, 10, value=5, step=1, label="Number of Samples")
 
         gen_btn = gr.Button("Generate")
+
         gen_gallery = gr.Gallery(label="Generated Images")
         gen_status = gr.Textbox(label="Status")
 
