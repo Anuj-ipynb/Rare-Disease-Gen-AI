@@ -1,10 +1,12 @@
 import torch
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, random_split, ConcatDataset
+from torch.utils.data import DataLoader, random_split, Dataset, ConcatDataset
 from models.classifier import CNN
 from sklearn.metrics import precision_score, recall_score, f1_score
 import os
 import numpy as np
+from PIL import Image
+import random
 
 # =========================
 # Config
@@ -12,33 +14,105 @@ import numpy as np
 device = "cuda" if torch.cuda.is_available() else "cpu"
 BATCH_SIZE = 16
 EPOCHS = 10
-LR = 1e-3
-USE_AUGMENTED = True
+LR = 5e-4
+
+USE_GENERATED = True
 
 # =========================
-# Data
+# Transforms
 # =========================
 transform = transforms.Compose([
     transforms.Resize((64, 64)),
     transforms.ToTensor()
 ])
 
+# =========================
+# Custom Dataset for generated images
+# =========================
+class GeneratedDataset(Dataset):
+    def __init__(self, folder, transform=None):
+        self.paths = []
+        self.labels = []
+        self.transform = transform
+
+        for file in os.listdir(folder):
+            if file.endswith(".png"):
+                path = os.path.join(folder, file)
+
+                if "benign" in file.lower():
+                    label = 0
+                elif "melanoma" in file.lower():
+                    label = 1
+                else:
+                    continue
+
+                self.paths.append(path)
+                self.labels.append(label)
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.paths[idx]).convert("RGB")
+        if self.transform:
+            img = self.transform(img)
+        return img, self.labels[idx]
+
+# =========================
+# Balance Dataset Function
+# =========================
+import random
+
+def balance_dataset(dataset):
+    data = []
+
+    for x, y in dataset:
+        data.append((x, y))
+
+    class0 = [d for d in data if d[1] == 0]
+    class1 = [d for d in data if d[1] == 1]
+
+    min_size = min(len(class0), len(class1))
+
+    class0_sample = random.sample(class0, min_size)
+    class1_sample = random.sample(class1, min_size)
+
+    balanced = class0_sample + class1_sample
+    random.shuffle(balanced)
+
+    return balanced
+
+# =========================
+# Load REAL dataset
+# =========================
 real_data = datasets.ImageFolder("dataset", transform=transform)
 
-if USE_AUGMENTED and os.path.exists("augmented_dataset"):
-    aug_data = datasets.ImageFolder("augmented_dataset", transform=transform)
-    full_dataset = ConcatDataset([real_data, aug_data])
-    print("Using augmented dataset")
+# =========================
+# Split ONLY real data
+# =========================
+train_size = int(0.8 * len(real_data))
+val_size = len(real_data) - train_size
+
+train_real, val_dataset = random_split(real_data, [train_size, val_size])
+
+# =========================
+# Combine + Balance
+# =========================
+if USE_GENERATED and os.path.exists("generated"):
+    gen_data = GeneratedDataset("generated", transform=transform)
+    combined = ConcatDataset([train_real, gen_data])
+    print(f"Using generated data: {len(gen_data)} samples")
 else:
-    full_dataset = real_data
-    print("Using real dataset only")
+    combined = train_real
+    print("Using real data only")
 
-# 🔥 Split dataset
-train_size = int(0.8 * len(full_dataset))
-val_size = len(full_dataset) - train_size
-train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+print("Balancing dataset...")
+balanced_data = balance_dataset(combined)
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+# =========================
+# Loaders
+# =========================
+train_loader = DataLoader(balanced_data, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 
 # =========================
@@ -46,13 +120,7 @@ val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 # =========================
 model = CNN(num_classes=2).to(device)
 
-# 🔥 Compute class weights dynamically
-targets = [y for _, y in real_data.samples]
-class_counts = np.bincount(targets)
-class_weights = 1. / class_counts
-weights = torch.tensor(class_weights, dtype=torch.float).to(device)
-
-criterion = torch.nn.CrossEntropyLoss(weight=weights)
+criterion = torch.nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
 # =========================

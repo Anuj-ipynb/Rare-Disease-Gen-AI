@@ -6,7 +6,7 @@ from models.model_vae import CVAE
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Load model
-model = CVAE(num_classes=2, latent_dim=16).to(device)
+model = CVAE(num_classes=2, latent_dim=8)   # ✅ must match training
 model.load_state_dict(torch.load("checkpoints/cvae.pth", map_location=device))
 model.eval()
 

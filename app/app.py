@@ -63,8 +63,12 @@ def get_saliency(img_tensor):
     loss.backward()
 
     saliency = img_tensor.grad.abs().max(dim=1)[0]
-    return saliency.squeeze().cpu().numpy()
 
+    
+    saliency = saliency.squeeze().cpu().numpy()
+    saliency = (saliency - saliency.min()) / (saliency.max() - saliency.min() + 1e-8)
+
+    return saliency
 # =========================
 # Prediction
 # =========================
@@ -121,21 +125,30 @@ def evaluate_model():
     if not cls_loaded:
         return "Train classifier first.", ""
 
+    # ===== Load real dataset only =====
     dataset = datasets.ImageFolder("dataset", transform=transform)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=16)
+
+    # ===== SAME SPLIT AS TRAINING =====
+    train_size = int(0.8 * len(dataset))
+    val_size = len(dataset) - train_size
+
+    _, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+
+    loader = torch.utils.data.DataLoader(val_dataset, batch_size=16)
 
     preds, labels = [], []
 
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device)
+
             out = classifier(x)
-            p = out.argmax(1).cpu().tolist()
+            p = out.argmax(1).cpu().numpy()
 
             preds.extend(p)
-            labels.extend(y.tolist())
+            labels.extend(y.numpy())
 
-    # ✅ FIXED ORDER
+    # ===== Metrics =====
     metrics = compute_metrics(labels, preds)
     cm = confusion_matrix(labels, preds)
 
