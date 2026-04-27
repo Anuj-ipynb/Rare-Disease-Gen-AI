@@ -5,17 +5,24 @@ from models.model_vae import CVAE
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-num_classes = 2
-model = CVAE(num_classes=num_classes).to(device)
+# Load model
+model = CVAE(num_classes=2, latent_dim=16).to(device)
 model.load_state_dict(torch.load("checkpoints/cvae.pth", map_location=device))
 model.eval()
 
-os.makedirs("augmented_dataset/melanoma", exist_ok=True)
+os.makedirs("generated", exist_ok=True)
 
-with torch.no_grad():
-    for i in range(100):
-        z = torch.randn(1, 32).to(device)
-        label = torch.tensor([[1, 0]]).float().to(device)
+# Generate samples
+for i in range(10):
+    z = torch.randn(1, model.latent_dim).to(device)
 
-        img = model.sample(z, label)
-        save_image(img, f"augmented_dataset/melanoma/{i}.png")
+    # Try both classes
+    label = torch.tensor([[1, 0]]).float().to(device)  # benign
+    img = model.sample(z, label)
+    save_image(img, f"generated/benign_{i}.png")
+
+    label = torch.tensor([[0, 1]]).float().to(device)  # melanoma
+    img = model.sample(z, label)
+    save_image(img, f"generated/melanoma_{i}.png")
+
+print("Samples generated in /generated folder")

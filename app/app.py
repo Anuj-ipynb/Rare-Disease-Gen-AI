@@ -2,11 +2,12 @@ import gradio as gr
 import torch
 from PIL import Image
 import os
-from torchvision import transforms
+from torchvision import transforms, datasets
 import numpy as np
 
 from models.classifier import CNN
 from models.model_vae import CVAE
+from utils.metrics import compute_metrics, confusion_matrix
 
 # =========================
 # Setup
@@ -49,10 +50,11 @@ def load_models():
 cls_loaded, gen_loaded = load_models()
 
 # =========================
-# Saliency Map (Explainability)
+# Saliency Map (Fixed)
 # =========================
 def get_saliency(img_tensor, label):
-    img_tensor.requires_grad_()
+    img_tensor = img_tensor.clone().detach().requires_grad_(True)
+
     out = classifier(img_tensor)
     loss = out[0, label]
     loss.backward()
@@ -61,7 +63,7 @@ def get_saliency(img_tensor, label):
     return saliency.squeeze().cpu().numpy()
 
 # =========================
-# Prediction Function
+# Prediction
 # =========================
 def predict(image):
     if not cls_loaded:
@@ -75,11 +77,10 @@ def predict(image):
         pred = prob.argmax().item()
         conf = prob[0][pred].item()
 
-    # Saliency
-    saliency = get_saliency(img.clone(), pred)
+    saliency = get_saliency(img, pred)
 
     return (
-        {label_map[pred]: float(conf)},   # confidence bar
+        {label_map[pred]: float(conf)},
         f"{label_map[pred]} ({conf:.2f})",
         saliency
     )
@@ -110,12 +111,53 @@ def generate_samples(class_idx, num_samples):
     return images, "Generated successfully."
 
 # =========================
+# Metrics Evaluation
+# =========================
+def evaluate_model():
+    if not cls_loaded:
+        return "Train classifier first.", ""
+
+    dataset = datasets.ImageFolder("dataset", transform=transform)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=16)
+
+    preds, labels = [], []
+
+    with torch.no_grad():
+        for x, y in loader:
+            x = x.to(device)
+            out = classifier(x)
+            p = out.argmax(1).cpu().tolist()
+
+            preds.extend(p)
+            labels.extend(y.tolist())
+
+    metrics = compute_metrics(preds, labels)
+    cm = confusion_matrix(preds, labels)
+
+    result_text = f"""
+Accuracy : {metrics['accuracy']:.3f}
+Precision: {metrics['precision']:.3f}
+Recall   : {metrics['recall']:.3f}
+F1 Score : {metrics['f1']:.3f}
+"""
+
+    cm_text = f"""
+Confusion Matrix:
+
+          Pred 0   Pred 1
+Actual 0   {cm[0][0]}       {cm[0][1]}
+Actual 1   {cm[1][0]}       {cm[1][1]}
+"""
+
+    return result_text, cm_text
+
+# =========================
 # UI
 # =========================
 with gr.Blocks() as app:
 
     gr.Markdown("# 🏥 Rare Disease AI Assistant")
-    gr.Markdown("⚠️ Not a medical diagnosis tool")
+    gr.Markdown("⚠️ This is NOT a medical diagnosis tool")
 
     # -------- Prediction Tab --------
     with gr.Tab("Prediction"):
@@ -152,6 +194,19 @@ with gr.Blocks() as app:
             generate_samples,
             inputs=[class_input, num_input],
             outputs=[gen_gallery, gen_status]
+        )
+
+    # -------- Metrics Tab --------
+    with gr.Tab("Model Metrics"):
+        metrics_output = gr.Textbox(label="Metrics", lines=6)
+        cm_output = gr.Textbox(label="Confusion Matrix", lines=6)
+
+        eval_btn = gr.Button("Evaluate Model")
+
+        eval_btn.click(
+            evaluate_model,
+            inputs=[],
+            outputs=[metrics_output, cm_output]
         )
 
 # Launch

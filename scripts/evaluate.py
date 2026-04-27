@@ -28,10 +28,18 @@ with torch.no_grad():
         preds.extend(p)
         labels.extend(y.tolist())
 
-acc, f1 = compute_metrics(preds, labels)
+# Compute metrics
+metrics = compute_metrics(preds, labels)
 cm = confusion_matrix(preds, labels)
 
-print(f"Accuracy: {acc:.2f}")
-print(f"F1 Score: {f1:.2f}")
-print("Confusion Matrix:")
-print(cm)
+# Print nicely
+print("\n===== MODEL PERFORMANCE =====")
+print(f"Accuracy : {metrics['accuracy']:.3f}")
+print(f"Precision: {metrics['precision']:.3f}")
+print(f"Recall   : {metrics['recall']:.3f}")
+print(f"F1 Score : {metrics['f1']:.3f}")
+
+print("\nConfusion Matrix:")
+print("         Pred 0   Pred 1")
+print(f"Actual 0   {cm[0][0]}       {cm[0][1]}")
+print(f"Actual 1   {cm[1][0]}       {cm[1][1]}")
