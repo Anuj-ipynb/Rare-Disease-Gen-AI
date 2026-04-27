@@ -8,9 +8,6 @@ class CVAE(nn.Module):
         self.latent_dim = latent_dim
         self.num_classes = num_classes
 
-        # ===== LABEL EMBEDDING (IMPORTANT) =====
-        self.label_emb = nn.Linear(num_classes, 8)
-
         # ===== ENCODER =====
         self.encoder = nn.Sequential(
             nn.Conv2d(3 + num_classes, 16, 3, 2, 1),
@@ -28,7 +25,7 @@ class CVAE(nn.Module):
         self.fc_logvar = nn.Linear(32 * 16 * 16, latent_dim)
 
         # ===== DECODER =====
-        self.fc_decode = nn.Linear(latent_dim + 8, 32 * 16 * 16)
+        self.fc_decode = nn.Linear(latent_dim + num_classes, 32 * 16 * 16)
 
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(32, 32, 4, 2, 1),
@@ -48,12 +45,11 @@ class CVAE(nn.Module):
         return self.fc_mu(h), self.fc_logvar(h)
 
     def reparameterize(self, mu, logvar):
-        # 🔥 reduced noise to prevent collapse
-        return mu + torch.randn_like(mu) * 0.1
+        std = torch.exp(0.5 * logvar)
+        return mu + torch.randn_like(std) * std
 
     def decode(self, z, labels):
-        label_feat = self.label_emb(labels)
-        z = torch.cat([z, label_feat], dim=1)
+        z = torch.cat([z, labels], dim=1)
 
         h = self.fc_decode(z)
         h = h.view(-1, 32, 16, 16)

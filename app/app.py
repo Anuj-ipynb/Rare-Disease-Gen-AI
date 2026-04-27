@@ -15,7 +15,7 @@ from utils.metrics import compute_metrics, confusion_matrix
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 IMG_SIZE = 64
-LATENT_DIM = 32
+LATENT_DIM = 8   # ✅ FIXED (must match training)
 NUM_CLASSES = 2
 
 transform = transforms.Compose([
@@ -50,13 +50,16 @@ def load_models():
 cls_loaded, gen_loaded = load_models()
 
 # =========================
-# Saliency Map (Fixed)
+# Saliency Map (FIXED)
 # =========================
-def get_saliency(img_tensor, label):
+def get_saliency(img_tensor):
+    classifier.eval()
     img_tensor = img_tensor.clone().detach().requires_grad_(True)
 
     out = classifier(img_tensor)
-    loss = out[0, label]
+    pred_class = out.argmax(dim=1)
+
+    loss = out[0, pred_class]
     loss.backward()
 
     saliency = img_tensor.grad.abs().max(dim=1)[0]
@@ -77,7 +80,7 @@ def predict(image):
         pred = prob.argmax().item()
         conf = prob[0][pred].item()
 
-    saliency = get_saliency(img, pred)
+    saliency = get_saliency(img)
 
     return (
         {label_map[pred]: float(conf)},
@@ -105,6 +108,7 @@ def generate_samples(class_idx, num_samples):
             z = torch.randn(1, LATENT_DIM).to(device)
             img = cvae.sample(z, label)
 
+            img = torch.clamp(img, 0, 1)  # ✅ FIX
             img_np = img.squeeze().permute(1, 2, 0).cpu().numpy()
             images.append(img_np)
 
@@ -131,8 +135,9 @@ def evaluate_model():
             preds.extend(p)
             labels.extend(y.tolist())
 
-    metrics = compute_metrics(preds, labels)
-    cm = confusion_matrix(preds, labels)
+    # ✅ FIXED ORDER
+    metrics = compute_metrics(labels, preds)
+    cm = confusion_matrix(labels, preds)
 
     result_text = f"""
 Accuracy : {metrics['accuracy']:.3f}
@@ -209,5 +214,7 @@ with gr.Blocks() as app:
             outputs=[metrics_output, cm_output]
         )
 
+# =========================
 # Launch
+# =========================
 app.launch()
